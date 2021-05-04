@@ -20,6 +20,7 @@ map $S3_STYLE $s3_host_hdr {
 # This creates the HTTP authentication header to be sent to S3
 js_set $s3auth s3gateway.s3auth;
 js_set $s3uri s3gateway.s3uri;
+js_set $s3token s3gateway.s3token;
 
 server {
     include /etc/nginx/conf.d/gateway/server_variables.conf;
@@ -67,7 +68,7 @@ server {
 
     # Do not proxy the S3 SOAP API. The S3 API has a less-documented feature
     # where the object name "soap" is used for the SOAP API. We don't allow
-    # access to it.
+    # access to it.n
     location /soap {
         return 404;
     }
@@ -92,6 +93,8 @@ server {
 
         # We set the host as the bucket name to inform the S3 API of the bucket
         proxy_set_header Host $s3_host_hdr;
+
+        proxy_set_header X-Amz-Security-Token $s3token;
 
         # Use keep alive connections in order to improve performance
         proxy_http_version 1.1;

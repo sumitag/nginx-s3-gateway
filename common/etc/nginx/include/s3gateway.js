@@ -48,7 +48,7 @@ var emptyPayloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b
  * Constant defining the headers being signed.
  * @type {string}
  */
-var signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+var signedHeaders = 'host;x-amz-content-sha256;x-amz-date;x-amz-security-token';
 
 /**
  * Strips all x-amz- headers from the output HTTP headers.
@@ -98,6 +98,7 @@ function awsHeaderDate(r) {
 function s3auth(r) {
     var accessId = process.env['S3_ACCESS_KEY_ID'];
     var secret = process.env['S3_SECRET_KEY'];
+    var token = process.env['S3_SECRET_TOKEN'];
     var bucket = process.env['S3_BUCKET_NAME'];
     var region = process.env['S3_REGION'];
     var server;
@@ -111,8 +112,14 @@ function s3auth(r) {
     if (sigver == '2') {
         return signatureV2(r, bucket, accessId, secret);
     } else {
-        return signatureV4(r, now, bucket, accessId, secret, region, server);
+        return signatureV4(r, now, bucket, accessId, secret, region, server, token);
     }
+}
+
+function s3token() {
+var token = process.env['S3_SECRET_TOKEN'];
+
+return token;
 }
 
 /**
@@ -193,10 +200,10 @@ function signatureV2(r, bucket, accessId, secret) {
  * @param region {string} API region associated with request
  * @returns {string} HTTP Authorization header value
  */
-function signatureV4(r, timestamp, bucket, accessId, secret, region, server) {
+function signatureV4(r, timestamp, bucket, accessId, secret, region, server, token) {
     var eightDigitDate = _eightDigitDate(timestamp);
     var amzDatetime = _amzDatetime(timestamp, eightDigitDate);
-    var signature = _buildSignatureV4(r, amzDatetime, eightDigitDate, bucket, secret, region, server);
+    var signature = _buildSignatureV4(r, amzDatetime, eightDigitDate, bucket, secret, region, server, token);
     var authHeader = 'AWS4-HMAC-SHA256 Credential='
             .concat(accessId, '/', eightDigitDate, '/', region, '/', service, '/aws4_request,',
                 'SignedHeaders=', signedHeaders, ',Signature=', signature);
@@ -221,14 +228,14 @@ function signatureV4(r, timestamp, bucket, accessId, secret, region, server) {
  * @returns {string} hex encoded hash of signature HMAC value
  * @private
  */
-function _buildSignatureV4(r, amzDatetime, eightDigitDate, bucket, secret, region, server) {
+function _buildSignatureV4(r, amzDatetime, eightDigitDate, bucket, secret, region, server, token) {
     var host = server;
     if (s3_style === 'virtual' || s3_style === 'default' || s3_style === undefined) {
         host = bucket + '.' + host;
     }
     var method = r.method;
     var uri = _escapeURIPath(s3uri(r));
-    var canonicalRequest = _buildCanonicalRequest(method, uri, host, amzDatetime);
+    var canonicalRequest = _buildCanonicalRequest(method, uri, host, amzDatetime, token);
 
     if (debug) {
         r.log('AWS v4 Auth Canonical Request: [' + canonicalRequest + ']');
@@ -351,10 +358,11 @@ function _buildStringToSign(amzDatetime, eightDigitDate, region, canonicalReques
  * @returns {string} string with concatenated request parameters
  * @private
  */
-function _buildCanonicalRequest(method, uri, host, amzDatetime) {
+function _buildCanonicalRequest(method, uri, host, amzDatetime, token) {
     var canonicalHeaders = 'host:' + host + '\n' +
         'x-amz-content-sha256:' + emptyPayloadHash + '\n' +
-        'x-amz-date:' + amzDatetime + '\n';
+        'x-amz-date:' + amzDatetime + '\n' +
+        'x-amz-security-token:' + token + '\n';
 
     // We hard code query parameters as empty because we don't want to forward
     // query parameters to S3 proxied requests.
@@ -493,6 +501,7 @@ export default {
     s3uri,
     redirectToS3,
     filterOutAmzHeaders,
+    s3token,
 
     // These functions do not need to be exposed, but they are exposed so that
     // unit tests can run against them.
